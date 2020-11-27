@@ -1,59 +1,75 @@
 #include "stackwalker.h"
-#include <stdio.h>
+#include <tchar.h>
 #include <stdexcept>
 
 #define THROW_CPP_EXCEPTION  1
 #define CATCH_CPP_EXCEPTION  1
+#define USE_PTD_FOR_EXP_CTX  1
 
 #define NOINLINE __declspec(noinline)
 
+struct Foo
+{
+    ~Foo()
+    {
+        OutputDebugStringA("----- Foo destructor -----");
+    }
+};
+
 NOINLINE int bar(int * pi = nullptr)
 {
-#if THROW_CPP_EXCEPTION == 1
-    throw(std::exception("Bar error"));   /* line 13 */
-#else
-    *pi = 0xBADDEAD;   /* line 15 */
-#endif
+    OutputDebugStringA("----- bar -----");
+    if (THROW_CPP_EXCEPTION) throw std::exception("Bar error"); else *pi = 0xBADDEAD;  /* line 22 */
+    OutputDebugStringA("+++++ bar +++++");
     return 0;
 }
 
-NOINLINE void foo()
+NOINLINE int foo()
 {
-    int x = bar(nullptr);  /* line 22 */
-    printf("bar = %d \n", x);
+    Foo obj;
+    return bar(nullptr);  /* line 30 */
 }
 
+extern "C" void** __cdecl __current_exception();
 extern "C" void** __cdecl __current_exception_context();
 
-NOINLINE void test()
+NOINLINE int test(int argc)
 {
+#if CATCH_CPP_EXCEPTION == 1
     try {
-        foo();  /* line 31 */
+#endif
+        return argc + foo();  /* line 41 */
+#if CATCH_CPP_EXCEPTION == 1
     }
     catch(...) {
-#if CATCH_CPP_EXCEPTION == 1
-        PCONTEXT ctx = *(PCONTEXT *)__current_exception_context();
+        OutputDebugStringA("===== test.catch =====");
+        PCONTEXT ctx = nullptr;
+#if USE_PTD_FOR_EXP_CTX == 1
+        ctx = *(PCONTEXT *)__current_exception_context();
+#endif
         StackWalker sw(StackWalker::RetrieveVerbose);
         sw.ShowCallstack(GetCurrentThread(), ctx);
-#endif
         throw;
     }
+#endif
 }
 
 LONG WINAPI ExpFilter(EXCEPTION_POINTERS * pExp, DWORD dwExpCode)
 {
+    OutputDebugStringA("===== main.__except =====");
     StackWalker sw(StackWalker::RetrieveVerbose);
     sw.ShowCallstack(GetCurrentThread(), pExp->ContextRecord);
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
-int main()
+int main(int argc, _TCHAR * argv[])
 {
     __try {
-        test();   /* line 53 */
+        test(argc);   /* line 68 */
     }
     __except( ExpFilter(GetExceptionInformation(), GetExceptionCode()) ) {
         // nothing
     }
+    OutputDebugStringA("***** END *****");
     return 0;
 }
