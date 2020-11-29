@@ -1,10 +1,10 @@
 #include "stackwalker.h"
 #include <tchar.h>
+#include <stdio.h>
 #include <stdexcept>
 
-#define THROW_CPP_EXCEPTION  1
-#define CATCH_CPP_EXCEPTION  1
-#define USE_PTD_FOR_EXP_CTX  1
+#define THROW_CPP_EXP  1
+#define CATCH_CPP_EXP  2
 
 #define NOINLINE __declspec(noinline)
 
@@ -19,7 +19,7 @@ struct Foo
 NOINLINE int bar(int * pi = nullptr)
 {
     OutputDebugStringA("----- bar -----");
-    if (THROW_CPP_EXCEPTION) throw std::exception("Bar error"); else *pi = 0xBADDEAD;  /* line 22 */
+    if (THROW_CPP_EXP) throw std::exception("Bar error"); else *pi = 0xDEAD;  /* line 22 */
     OutputDebugStringA("+++++ bar +++++");
     return 0;
 }
@@ -35,16 +35,16 @@ extern "C" void** __cdecl __current_exception_context();
 
 NOINLINE int test(int argc)
 {
-#if CATCH_CPP_EXCEPTION == 1
+#if CATCH_CPP_EXP >= 1
     try {
 #endif
         return argc + foo();  /* line 41 */
-#if CATCH_CPP_EXCEPTION == 1
+#if CATCH_CPP_EXP >= 1
     }
     catch(...) {
         OutputDebugStringA("===== test.catch =====");
         PCONTEXT ctx = nullptr;
-#if USE_PTD_FOR_EXP_CTX == 1
+#if CATCH_CPP_EXP == 2
         ctx = *(PCONTEXT *)__current_exception_context();
 #endif
         StackWalker sw(StackWalker::RetrieveVerbose);
@@ -64,8 +64,11 @@ LONG WINAPI ExpFilter(EXCEPTION_POINTERS * pExp, DWORD dwExpCode)
 
 int main(int argc, _TCHAR * argv[])
 {
+    char txt[80];
+    sprintf_s(txt, "THROW_CPP_EXP = %d, CATCH_CPP_EXP = %d \n", THROW_CPP_EXP, CATCH_CPP_EXP);
+    OutputDebugStringA(txt);
     __try {
-        test(argc);   /* line 68 */
+        test(argc);   /* line 71 */
     }
     __except( ExpFilter(GetExceptionInformation(), GetExceptionCode()) ) {
         // nothing
