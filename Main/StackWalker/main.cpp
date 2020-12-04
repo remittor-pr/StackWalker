@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <tchar.h>
 
-#define UNHANDLED_EXCEPTION_TEST
+//#define UNHANDLED_EXCEPTION_TEST
 #define EXCEPTION_FILTER_TEST
 
 // secure-CRT_functions are only available starting with VC8
@@ -34,6 +34,14 @@ class StackWalkerToConsole : public StackWalker
 {
 protected:
   virtual void OnOutput(LPCSTR szText) { printf("%s", szText); }
+  
+  virtual void OnLoadModule(LPCSTR img, LPCSTR mod, DWORD64 baseAddr,
+                            DWORD size, DWORD result, LPCSTR symType,
+                            LPCSTR pdbName, ULONGLONG fileVersion)
+  {
+    LPCSTR name = strrchr(img, '\\');
+    printf("%p %s (result : %d) %s \n", (LPVOID)baseAddr, name ? name : img, result, symType);
+  }
 };
 
 void Func5()
@@ -183,10 +191,8 @@ static void InitUnhandledExceptionFilter()
 #endif // UNHANDLED_EXCEPTION_TEST
 
 #ifdef EXCEPTION_FILTER_TEST
-LONG WINAPI ExpFilter(EXCEPTION_POINTERS* pExp, DWORD dwExpCode)
+LONG WINAPI ExpFilter(StackWalkerToConsole & sw, EXCEPTION_POINTERS* pExp, DWORD dwExpCode)
 {
-  //StackWalker sw;  // output to default (Debug-Window)
-  StackWalkerToConsole sw; // output to the console
   sw.ShowCallstack(GetCurrentThread(), pExp->ContextRecord);
   return EXCEPTION_EXECUTE_HANDLER;
 }
@@ -212,13 +218,25 @@ void ExpTest1()
 {
   ExpTest2();
 }
-void TestExceptionWalking()
+
+#define TEST_NEW_DLL_AND_FUNC 1
+
+void TestExceptionWalking(StackWalkerToConsole & sw)
 {
   __try
   {
+    printf("=====" __FUNCTION__ "====== \n");
+#if TEST_NEW_DLL_AND_FUNC == 0
     ExpTest1();
+#else
+    typedef VOID(WINAPI * tDllGetVersion)(LPVOID pcdvi);
+    HMODULE hLib = LoadLibraryA("cabinet.dll");
+    tDllGetVersion pDllGetVersion = (tDllGetVersion)GetProcAddress(hLib, "DllGetVersion");
+    printf("===== call cabinet.DllGetVersion(bad_ptr) ======= \n");
+    pDllGetVersion((LPVOID)8);
+#endif
   }
-  __except (ExpFilter(GetExceptionInformation(), GetExceptionCode()))
+  __except (ExpFilter(sw, GetExceptionInformation(), GetExceptionCode()))
   {
     printf("\n\nException-Handler called\n\n\n");
   }
@@ -234,18 +252,20 @@ int f(int i)
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-  printf("\n\n\nShow an object:\n\n\n");
-  GlobalIntTest();
+  //printf("\n\n\nShow an object:\n\n\n");
+  //GlobalIntTest();
 
-  printf("\n\n\nShow a function pointer:\n\n\n");
-  GlobalFunctionPointerTest();
+  //printf("\n\n\nShow a function pointer:\n\n\n");
+  //GlobalFunctionPointerTest();
 
-  printf("\n\n\nShow a simple callstack of the current thread:\n\n\n");
-  StackWalkTest();
+  //printf("\n\n\nShow a simple callstack of the current thread:\n\n\n");
+  //StackWalkTest();
 
 #ifdef EXCEPTION_FILTER_TEST
   printf("\n\n\nShow a the callstack from inside an exception-handler:\n\n\n");
-  TestExceptionWalking();
+  StackWalkerToConsole sw; // output to the console
+  sw.ShowCallstack();
+  TestExceptionWalking(sw);
 #endif
 
 #ifdef UNHANDLED_EXCEPTION_TEST
